@@ -1,0 +1,13 @@
+VAULT_TOKEN=
+
+RUST_LOG=error,warn,info
+
+BASE_POSTGRES_URL=postgres://localhost:5432
+VAULT_ADDR="http://127.0.0.1:8200"
+LISTEN_ADDR=127.0.0.1:7749
+
+# -----------------------------------------
+# Authentication Database
+# -----------------------------------------
+AUTH_DB=ytx_auth                      # Database storing YTX role and workspace info
+# Note: must match the database created by ytx-initdb
