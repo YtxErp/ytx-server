@@ -1,4 +1,5 @@
-VAULT_TOKEN=
+VAULT_ROLE_ID=
+VAULT_SECRET_ID=
 
 RUST_LOG=error,warn,info
 

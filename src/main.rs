@@ -28,12 +28,20 @@ async fn main() -> Result<()> {
     let _guard = init_tracing(&rust_log);
 
     // Read vault data from .env file
-    let vault_token = var("VAULT_TOKEN").map_err(|_| anyhow!("VAULT_TOKEN not set"))?;
-    if vault_token.trim().is_empty() {
-        anyhow::bail!("VAULT_TOKEN is empty");
+    let vault_role_id = var("VAULT_ROLE_ID").map_err(|_| anyhow!("VAULT_ROLE_ID not set"))?;
+    if vault_role_id.trim().is_empty() {
+        anyhow::bail!("VAULT_ROLE_ID is empty");
+    }
+
+    let vault_secret_id = var("VAULT_SECRET_ID").map_err(|_| anyhow!("VAULT_SECRET_ID not set"))?;
+    if vault_secret_id.trim().is_empty() {
+        anyhow::bail!("VAULT_SECRET_ID is empty");
     }
 
     let vault_addr = var("VAULT_ADDR").unwrap_or_else(|_| "http://127.0.0.1:8200".to_string());
+    let vault_token_manager =
+        VaultTokenManager::new(vault_addr.clone(), vault_role_id, vault_secret_id);
+    let vault_token = vault_token_manager.get_token().await?;
 
     let ytx_passwords = read_vault_data(&vault_addr, &vault_token, YTX_SECRET_PATH)
         .await
@@ -63,8 +71,7 @@ async fn main() -> Result<()> {
 
     let db_hub = Arc::new(DbHub::new(
         base_postgres_url,
-        vault_addr,
-        vault_token,
+        vault_token_manager,
         auth_pool,
     ));
 

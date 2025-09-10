@@ -17,7 +17,7 @@
 *.dSYM/
 
 # Log files
-*.log
+/logs/*
 
 # Database files
 *.db

@@ -1,5 +1,6 @@
 use crate::YTX_SECRET_PATH;
 
+use crate::VaultTokenManager;
 use crate::utils::get_vault_password;
 use crate::utils::read_vault_data;
 
@@ -11,11 +12,9 @@ use tokio::sync::{Mutex, broadcast};
 use tracing::info;
 use url::Url;
 
-// 数据库连接池管理器
 pub struct DbHub {
     pub base_postgres_url: String,
-    pub vault_addr: String,
-    pub vault_token: String,
+    pub vault_token_manager: VaultTokenManager,
     pub auth_pool: PgPool,
     pools: Mutex<HashMap<(String, String), (PgPool, Instant)>>,
     pub senders: Mutex<HashMap<(String, String), (broadcast::Sender<String>, Instant)>>,
@@ -24,14 +23,12 @@ pub struct DbHub {
 impl DbHub {
     pub fn new(
         base_postgres_url: String,
-        vault_addr: String,
-        vault_token: String,
+        vault_token_manager: VaultTokenManager,
         auth_pool: PgPool,
     ) -> Self {
         Self {
             base_postgres_url,
-            vault_addr,
-            vault_token,
+            vault_token_manager,
             auth_pool,
             pools: Mutex::new(HashMap::new()),
             senders: Mutex::new(HashMap::new()),
@@ -56,7 +53,10 @@ impl DbHub {
     }
 
     pub async fn get_role_password(&self, role: &str) -> Result<String> {
-        let data = read_vault_data(&self.vault_addr, &self.vault_token, YTX_SECRET_PATH).await?;
+        let vault_token = self.vault_token_manager.get_token().await?;
+        let vault_addr = &self.vault_token_manager.vault_addr;
+
+        let data = read_vault_data(vault_addr, &vault_token, YTX_SECRET_PATH).await?;
         let password = get_vault_password(&data, role)?;
         Ok(password)
     }

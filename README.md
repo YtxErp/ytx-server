@@ -38,7 +38,8 @@ YTX Server is a Rust-based backend server that provides WebSocket communication,
         ```env
         BASE_POSTGRES_URL=postgres://localhost:5432
         VAULT_ADDR=<http://127.0.0.1:8200>
-        VAULT_TOKEN=your-vault-token
+        VAULT_ROLE_ID=
+        VAULT_SECRET_ID=
         LISTEN_ADDR=127.0.0.1:7749
         AUTH_DB=ytx_auth
         ```
