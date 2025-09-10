@@ -1629,30 +1629,6 @@ impl Session {
     }
 }
 
-impl Session {
-    async fn handle_update_settlement(&self, msg: &Msg) -> Result<()> {
-        let (user_id, pool, sender) = self.resolve_context()?;
-
-        let mut value: Update =
-            from_value(msg.value.clone()).with_context(|| "Failed to parse Update")?;
-
-        value.session_id = self.session_id.to_string();
-        let table_name = format!("{}_settlement", value.section);
-
-        let now = Utc::now().to_rfc3339();
-        let cache = &mut value.cache;
-
-        cache.insert(UPDATED_BY.to_string(), Value::String(user_id.to_string()));
-        cache.insert(UPDATED_TIME.to_string(), Value::String(now));
-
-        update_row(&table_name, value.id, cache, pool).await?;
-
-        broadcast_public_message(sender.clone(), msg.msg_type.clone(), json!(value)).await?;
-
-        Ok(())
-    }
-}
-
 fn pg_to_json_rows(rows: &[PgRow]) -> Result<Value> {
     let mut result = Vec::new();
 

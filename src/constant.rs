@@ -16,10 +16,6 @@ pub static ALLOWED_SECTIONS: Lazy<HashSet<&'static str>> =
 pub const MSG_TYPE: &str = "msg_type";
 pub const VALUE: &str = "value";
 
-pub const _BRANCH_NODE: i32 = 0;
-pub const LEAF_NODE: i32 = 1;
-pub const SUPPORT_NODE: i32 = 2;
-
 pub const USER_ID: &str = "user_id";
 pub const CREATED_BY: &str = "created_by";
 pub const CREATED_TIME: &str = "created_time";
