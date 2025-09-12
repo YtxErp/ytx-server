@@ -32,7 +32,6 @@ pub enum MsgType {
     NodeUpdate,
     EntryUpdate,
     EntryRhsNode,
-    EntrySupportNode,
     LeafRemove,
     BranchRemove,
     DirectionRule,
@@ -43,7 +42,6 @@ pub enum MsgType {
     GlobalConfig,
     TreeAcked,
     LeafAcked,
-    SupportAcked,
     CheckAction,
     DocumentDir,
     DefaultUnit,
@@ -65,14 +63,6 @@ message_struct! {
 
 message_struct! {
     pub struct LeafAcked {
-        pub section: String,
-        pub node_id : Uuid,
-        pub entry_array : Value,
-    }
-}
-
-message_struct! {
-    pub struct SupportAcked {
         pub section: String,
         pub node_id : Uuid,
         pub entry_array : Value,
@@ -156,17 +146,6 @@ message_struct! {
         pub is_parallel: bool,
         pub lhs_delta: Option<HashMap<String, Value>>,
         pub rhs_delta: Option<HashMap<String, Value>>,
-    }
-}
-
-message_struct! {
-    pub struct EntrySupportNode {
-        pub section: String,
-        pub session_id : String,
-        pub entry_id : Uuid,
-        pub old_support_id : Uuid,
-        pub new_support_id : Uuid,
-        pub meta: HashMap<String, Value>,
     }
 }
 
@@ -255,7 +234,6 @@ message_struct! {
         pub session_id : String,
         pub id: Uuid,
         pub leaf_entry: HashMap<Uuid, Vec<Uuid>>,
-        pub support_entry: HashMap<Uuid, Vec<Uuid>>,
         pub node_delta: Vec<NodeDelta>,
     }
 }

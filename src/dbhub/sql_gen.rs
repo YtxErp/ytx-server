@@ -133,7 +133,7 @@ pub trait SqlGen: Send + Sync {
     /// Returns the SQL used to collect reference information before removing a leaf node.
     ///
     /// This query is used to gather affected node IDs and related entry data
-    /// (such as debit, credit, rate, and support_node) before deleting a node.
+    /// (such as debit, credit and rate) before deleting a node.
     ///
     /// Only applicable to `finance`, `item`, and `task` sections, where the entry
     /// table supports **double-entry** structure with both `lhs_node`
@@ -145,38 +145,6 @@ pub trait SqlGen: Send + Sync {
     /// Parameters:
     /// - `$1`: The leaf node ID to be removed.
     fn fetch_leaf_entry_refs(&self, _section: &str) -> Option<String> {
-        None
-    }
-
-    /// Returns the SQL used to check whether a node is referenced as a support node
-    /// (`support_node`) in any valid entry.
-    ///
-    /// Only `stakeholder` nodes can be referenced as support nodes by `task` entries.
-    /// Other sections (e.g., `sale`, `purchase`, `item`) never appear as support nodes
-    /// and therefore do not need this check.
-    fn has_support_reference(&self, _section: &str) -> Option<String> {
-        None
-    }
-
-    /// Returns the SQL used to fetch entries where the given node is referenced
-    /// as a support node.
-    ///
-    /// This only applies to `stakeholder` nodes being referenced by `task` entries.
-    fn fetch_support_entry(&self, _section: &str) -> Option<String> {
-        None
-    }
-
-    /// Returns SQL to clear `support_node` references from entries involving a given node.
-    ///
-    /// This only applies to the `task` section, whose entry table includes a `support_node`
-    /// column that references `stakeholder` nodes. Other sections do not need to implement
-    /// this behavior.
-    ///
-    /// Parameters:
-    ///   $1 - updated_time (e.g., NOW())
-    ///   $2 - updated_by (user_id)
-    ///   $3 - support_node (the stakeholder node to disassociate)
-    fn remove_support_reference(&self, _section: &str) -> Option<String> {
         None
     }
 
@@ -327,36 +295,6 @@ impl SqlGen for Stakeholder {
             "#
             .to_string(),
         )
-    }
-
-    fn has_support_reference(&self, _section: &str) -> Option<String> {
-        Some(format!(
-            "SELECT EXISTS(SELECT 1 FROM task_entry WHERE support_node = $1 AND is_valid = TRUE)"
-        ))
-    }
-
-    fn fetch_support_entry(&self, _section: &str) -> Option<String> {
-        Some(format!(
-            r#"
-            SELECT * FROM task_entry
-            WHERE support_node = $1 AND is_valid = TRUE
-            "#,
-        ))
-    }
-
-    fn remove_support_reference(&self, _section: &str) -> Option<String> {
-        Some(format!(
-            r#"
-            UPDATE task_entry
-            SET
-                support_node = NULL,
-                updated_time = $2,
-                updated_by = $1
-            WHERE
-                support_node = $3
-                AND is_valid = TRUE
-            "#
-        ))
     }
 
     fn merge_node_total(&self, _section: &str) -> Option<String> {
@@ -623,13 +561,13 @@ impl SqlGen for Item {
     fn fetch_leaf_entry_refs(&self, section: &str) -> Option<String> {
         Some(format!(
             r#"
-        SELECT rhs_node AS node_id, id AS entry_id, rhs_debit as debit, rhs_credit as credit, unit_cost AS rate, NULL AS support_id
+        SELECT rhs_node AS node_id, id AS entry_id, rhs_debit as debit, rhs_credit as credit, unit_cost AS rate
         FROM {0}_entry
         WHERE lhs_node = $1 AND is_valid = TRUE
 
         UNION ALL
 
-        SELECT lhs_node AS node_id, id AS entry_id, lhs_debit as debit, lhs_credit as credit, unit_cost AS rate, NULL AS support_id
+        SELECT lhs_node AS node_id, id AS entry_id, lhs_debit as debit, lhs_credit as credit, unit_cost AS rate
         FROM {0}_entry
         WHERE rhs_node = $1 AND is_valid = TRUE
         "#,
@@ -642,13 +580,13 @@ impl SqlGen for Finance {
     fn fetch_leaf_entry_refs(&self, section: &str) -> Option<String> {
         Some(format!(
             r#"
-            SELECT rhs_node AS node_id, id AS entry_id, rhs_debit as debit, rhs_credit as credit, lhs_rate AS rate, support_node AS support_id
+            SELECT rhs_node AS node_id, id AS entry_id, rhs_debit as debit, rhs_credit as credit, lhs_rate AS rate
             FROM {0}_entry
             WHERE lhs_node = $1 AND is_valid = TRUE
 
             UNION ALL
 
-            SELECT lhs_node AS node_id, id AS entry_id, lhs_debit as debit, lhs_credit as credit, rhs_rate AS rate, support_node AS support_id
+            SELECT lhs_node AS node_id, id AS entry_id, lhs_debit as debit, lhs_credit as credit, rhs_rate AS rate
             FROM {0}_entry
             WHERE rhs_node = $1 AND is_valid = TRUE
             "#,
@@ -694,13 +632,13 @@ impl SqlGen for Task {
     fn fetch_leaf_entry_refs(&self, section: &str) -> Option<String> {
         Some(format!(
             r#"
-        SELECT rhs_node AS node_id, id AS entry_id, rhs_debit as debit, rhs_credit as credit, unit_cost AS rate, support_node AS support_id
+        SELECT rhs_node AS node_id, id AS entry_id, rhs_debit as debit, rhs_credit as credit, unit_cost AS rate
         FROM {0}_entry
         WHERE lhs_node = $1 AND is_valid = TRUE
 
         UNION ALL
 
-        SELECT lhs_node AS node_id, id AS entry_id, lhs_debit as debit, lhs_credit as credit, unit_cost AS rate, support_node AS support_id
+        SELECT lhs_node AS node_id, id AS entry_id, lhs_debit as debit, lhs_credit as credit, unit_cost AS rate
         FROM {0}_entry
         WHERE rhs_node = $1 AND is_valid = TRUE
         "#,

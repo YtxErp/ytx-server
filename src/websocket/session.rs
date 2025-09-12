@@ -168,7 +168,6 @@ impl Session {
             MsgType::EntrySearch => self.search_entry(&msg).await?,
 
             MsgType::EntryRhsNode => self.update_entry_rhs_node(&msg).await?,
-            MsgType::EntrySupportNode => self.update_entry_support_node(&msg).await?,
             MsgType::EntryRate => self.update_entry_value(&msg).await?,
             MsgType::EntryNumeric => self.update_entry_value(&msg).await?,
 
@@ -178,7 +177,6 @@ impl Session {
 
             MsgType::TreeAcked => self.tree_acked(&msg).await?,
             MsgType::LeafAcked => self.leaf_acked(&msg).await?,
-            MsgType::SupportAcked => self.support_acked(&msg).await?,
             MsgType::OneNode => self.one_node(&msg).await?,
 
             // Action check
@@ -915,7 +913,6 @@ impl Session {
 
         let id = value.id;
         let leaf_entry = &mut value.leaf_entry;
-        let support_entry = &mut value.support_entry;
 
         value.session_id = self.session_id.to_string();
         let now = Utc::now();
@@ -933,19 +930,11 @@ impl Session {
             for row in rows {
                 let node_id: Uuid = row.try_get(NODE_ID)?;
                 let entry_id: Uuid = row.try_get(ENTRY_ID)?;
-                let support_id: Option<Uuid> = row.try_get(SUPPORT_ID)?;
 
                 leaf_entry
                     .entry(node_id)
                     .or_insert_with(Vec::new)
                     .push(entry_id);
-
-                if let Some(support) = support_id {
-                    support_entry
-                        .entry(support)
-                        .or_insert_with(Vec::new)
-                        .push(entry_id);
-                }
 
                 let debit: Decimal = row.try_get(DEBIT)?;
                 let credit: Decimal = row.try_get(CREDIT)?;
@@ -1243,45 +1232,6 @@ impl Session {
         Ok(())
     }
 
-    async fn support_acked(&self, msg: &Msg) -> Result<()> {
-        let pool = self
-            .pgpool
-            .as_ref()
-            .ok_or(anyhow!("pgpool not initialized"))?;
-
-        let mut value: SupportAcked =
-            from_value(msg.value.clone()).with_context(|| "Failed to parse SupportAcked")?;
-
-        let section = &value.section;
-        validate_section(section)?;
-
-        let node_id = value.node_id;
-
-        let sql_gen = self
-            .sql_factory
-            .get(section)
-            .expect("SqlGen must exist after validate_section");
-
-        let sql = sql_gen
-            .fetch_support_entry(section)
-            .ok_or_else(|| anyhow!("No SQL statement"))?;
-
-        let rows = sqlx::query(&sql).bind(node_id).fetch_all(pool).await?;
-
-        if rows.is_empty() {
-            info!(
-                "No entry rows found for section '{}' and id {}",
-                section, node_id
-            );
-            return Ok(());
-        }
-
-        value.entry_array = pg_to_json_rows(&rows)?;
-        send_private_message(self.ws_writer.clone(), msg.msg_type.clone(), json!(value)).await?;
-
-        Ok(())
-    }
-
     async fn insert_entry(&self, msg: &Msg) -> Result<()> {
         let (user_id, pool, sender) = self.resolve_context()?;
 
@@ -1493,50 +1443,6 @@ impl Session {
             .await?;
 
         tx.commit().await?;
-
-        broadcast_public_message(sender.clone(), msg.msg_type.clone(), json!(value)).await?;
-
-        Ok(())
-    }
-
-    async fn update_entry_support_node(&self, msg: &Msg) -> Result<()> {
-        let (user_id, pool, sender) = self.resolve_context()?;
-
-        let mut value: EntrySupportNode =
-            from_value(msg.value.clone()).with_context(|| "Failed to parse EntrySupportNode")?;
-
-        let section = &value.section;
-        validate_section(section)?;
-
-        let new_support_id = value.new_support_id;
-        let entry_id = value.entry_id;
-
-        if entry_id == Uuid::nil() {
-            return Err(anyhow!("entry_id cannot be nil"));
-        }
-
-        let now = Utc::now();
-
-        value.session_id = self.session_id.to_string();
-        let meta = &mut value.meta;
-
-        meta.insert(UPDATED_BY.to_string(), Value::String(user_id.to_string()));
-        meta.insert(UPDATED_TIME.to_string(), Value::String(now.to_rfc3339()));
-
-        let entry_table = format!("{}_entry", section);
-
-        let sql = format!(
-            "UPDATE {} SET updated_by = $1, updated_time = $2, support_node = $3 WHERE id = $4",
-            entry_table
-        );
-
-        sqlx::query(&sql)
-            .bind(user_id) // updated_by → $1
-            .bind(now) // updated_time → $2
-            .bind(new_support_id) //  → $3
-            .bind(entry_id) // id → $4
-            .execute(pool)
-            .await?;
 
         broadcast_public_message(sender.clone(), msg.msg_type.clone(), json!(value)).await?;
 
@@ -2007,20 +1913,6 @@ async fn has_leaf_reference(
     Ok(exists)
 }
 
-async fn has_support_reference(
-    section: &str,
-    id: Uuid,
-    sql_gen: &dyn SqlGen,
-    pool: &PgPool,
-) -> Result<bool> {
-    let Some(sql) = sql_gen.has_support_reference(section) else {
-        return Ok(false);
-    };
-
-    let exists: bool = sqlx::query_scalar(&sql).bind(id).fetch_one(pool).await?;
-    Ok(exists)
-}
-
 async fn has_external_reference(id: Uuid, sql_gen: &dyn SqlGen, pool: &PgPool) -> Result<bool> {
     let Some(sql) = sql_gen.has_external_reference() else {
         return Ok(false);
@@ -2045,59 +1937,6 @@ async fn remove_leaf_reference(
         .bind(updated_by) // $1
         .bind(updated_time) // $2
         .bind(id) // $3
-        .execute(conn)
-        .await?;
-
-    Ok(())
-}
-
-async fn remove_support_reference(
-    section: &str,
-    id: Uuid,
-    updated_by: Uuid,
-    updated_time: DateTime<Utc>,
-    sql_gen: &dyn SqlGen,
-    conn: &mut PgConnection,
-) -> Result<()> {
-    let Some(sql) = sql_gen.remove_support_reference(section) else {
-        return Ok(());
-    };
-
-    sqlx::query(&sql)
-        .bind(updated_by)
-        .bind(updated_time)
-        .bind(id)
-        .execute(conn)
-        .await?;
-
-    Ok(())
-}
-
-async fn replace_support_reference(
-    section: &str,
-    old_id: Uuid,
-    new_id: Uuid,
-    updated_by: Uuid,
-    updated_time: DateTime<Utc>,
-    conn: &mut PgConnection,
-) -> Result<()> {
-    let sql = format!(
-        r#"
-        UPDATE {}_entry
-        SET
-            support_id = $1,
-            updated_by = $2,
-            updated_at = $3
-        WHERE support_id = $4 AND is_valid = TRUE
-        "#,
-        section
-    );
-
-    sqlx::query(&sql)
-        .bind(new_id)
-        .bind(updated_by)
-        .bind(updated_time)
-        .bind(old_id)
         .execute(conn)
         .await?;
 
