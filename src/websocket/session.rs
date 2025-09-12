@@ -80,22 +80,20 @@ impl Session {
     }
 
     async fn cleanup(&mut self) {
-        info!("Session cleanup started.");
-
         let _ = self.stop_sender.send(());
-        let handle = std::mem::replace(&mut self.forwarder, tokio::spawn(async {}));
-        match handle.await {
-            Ok(_) => info!("Broadcast forwarder task exited."),
-            Err(e) => error!("Broadcast forwarder join error: {:?}", e),
+
+        let forwarder_handle = std::mem::replace(&mut self.forwarder, tokio::spawn(async {}));
+        if let Err(e) = forwarder_handle.await {
+            error!("[session] Broadcast forwarder task join failed: {:?}", e);
         }
 
         if let Ok(mut writer) = self.ws_writer.try_lock() {
-            if writer.close().await.is_ok() {
-                info!("WebSocket close finished.");
+            if let Err(e) = writer.close().await {
+                error!("[session] WebSocket close failed: {:?}", e);
             }
         }
 
-        info!("Session cleanup finished.");
+        info!("[session] Cleanup finished successfully.");
     }
 }
 
@@ -113,7 +111,7 @@ impl Session {
         let msg: Msg = serde_json::from_str(&text)?;
         let msg_type = msg.msg_type.clone();
 
-        info!("Handling: {:?}", msg_type);
+        info!("Handling message: {:?}", msg_type);
 
         match msg.msg_type {
             MsgType::Login => {
@@ -186,7 +184,8 @@ impl Session {
             _ => {}
         }
 
-        info!("Successfully.");
+        info!("Message {:?} processed successfully.", msg_type);
+
         return Ok(());
     }
 }
@@ -365,15 +364,23 @@ impl Session {
             &database,
         )?;
 
+        info!(
+            user_id = %user_id,
+            workspace = %workspace,
+            database = %database,
+            role = %role,
+            "Logged in:"
+        );
+
         // Initialize connection pool
         let pool = self.dbhub.init_pool(&role_url, &database, &role).await?;
-        info!(database = %database, role = %role, "Connection pool ready");
+        info!(database = %database, role = %role, "Connection pool:");
 
         self.start_broadcast(&database, &role).await?;
-        info!(database = %database, role = %role, "Broadcast ready");
+        info!(database = %database, role = %role, "Broadcast:");
 
         self.push_global_config(pool.clone()).await?;
-        info!("Push global config successfully.");
+        info!("Push global config");
 
         // Send login success message with session ID
         send_private_message(
@@ -386,7 +393,7 @@ impl Session {
         .await?;
 
         self.tree_applied(pool.clone()).await?;
-        info!("Push tree data successfully.");
+        info!("Push tree data");
 
         self.pgpool = Some(pool);
         self.user_id = Some(user_id);

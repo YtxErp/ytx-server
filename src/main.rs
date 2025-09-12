@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
         .await
         .context("Failed to connect to auth DB")?;
 
-    info!("Connected to auth DB successfully.");
+    info!("Auth database connection established.");
 
     let db_hub = Arc::new(DbHub::new(
         base_postgres_url,
@@ -106,10 +106,11 @@ async fn main() -> Result<()> {
 
             if request.starts_with("GET / ") || request.starts_with("GET / HTTP/") {
                 if request.to_ascii_lowercase().contains("upgrade: websocket") {
-                    info!("Incoming WebSocket handshake, upgrading connection.");
+                    info!("Upgrading incoming WebSocket handshake.");
+
                     WebSocket::new(stream, db_hub, sql_factory).handle().await;
                 } else {
-                    info!("Incoming HTTP request, responding with 200 OK.");
+                    info!("HTTP request received, responded 200 OK.");
 
                     let response = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK";
                     let _ = stream.write_all(response).await;
