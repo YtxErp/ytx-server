@@ -20,6 +20,7 @@ pub const USER_ID: &str = "user_id";
 pub const CREATED_BY: &str = "created_by";
 pub const CREATED_TIME: &str = "created_time";
 pub const SESSION_ID: &str = "session_id";
+pub const EXPIRE_TIME: &str = "expire_time";
 pub const UPDATED_BY: &str = "updated_by";
 pub const UPDATED_TIME: &str = "updated_time";
 pub const NODE: &str = "node";

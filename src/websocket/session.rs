@@ -72,7 +72,7 @@ impl Session {
             match self.handle_message(msg).await {
                 Ok(()) => {}
                 Err(e) => {
-                    error!("Error: {:?}", e);
+                    error!("{:?}", e);
                 }
             }
         }
@@ -298,7 +298,7 @@ impl Session {
         // ================================
         let row = sqlx::query(
             r#"
-            SELECT database
+            SELECT database, expire_time
             FROM ytx_workspace_database
             WHERE workspace = $1 AND is_valid = TRUE
         "#,
@@ -313,10 +313,26 @@ impl Session {
             None => return Err(anyhow!("Workspace database not found or inactive")),
         };
 
-        // Extract the database name
+        // Extract the database name and expire_time
         let database: String = row
             .try_get("database")
             .with_context(|| "Failed to get 'database' from workspace row")?;
+
+        let expire_time: Option<chrono::DateTime<chrono::Utc>> = row
+            .try_get("expire_time")
+            .with_context(|| "Failed to get 'expire_time' from workspace row")?;
+
+        // Check if workspace is expired
+        match expire_time {
+            Some(expire_time) => {
+                if chrono::Utc::now() > expire_time {
+                    return Err(anyhow!("Workspace subscription has expired"));
+                }
+            }
+            None => {
+                return Err(anyhow!("Workspace has no expire_time set"));
+            }
+        }
 
         // ================================
         // Check workspace role for the user
@@ -382,12 +398,15 @@ impl Session {
         self.push_global_config(pool.clone()).await?;
         info!("Push global config");
 
-        // Send login success message with session ID
+        // Send login success message with session ID and expire time
+        let expire_time_str = expire_time.map(|t| t.to_rfc3339());
+
         send_private_message(
             self.ws_writer.clone(),
             MsgType::LoginSuccess,
             json!({
                 SESSION_ID: self.session_id.to_string(),
+                EXPIRE_TIME: expire_time_str,
             }),
         )
         .await?;
