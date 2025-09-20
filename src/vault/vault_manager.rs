@@ -1,11 +1,11 @@
 use anyhow::{Context, Result, anyhow};
-use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
+use reqwest::header::AUTHORIZATION;
 use serde_json::Value;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
-pub struct VaultTokenManager {
-    pub vault_addr: String,
+pub struct VaultManager {
+    addr: String,
     role_id: String,
     secret_id: String,
     client: reqwest::Client,
@@ -13,10 +13,10 @@ pub struct VaultTokenManager {
     expires_at: Mutex<Option<Instant>>,
 }
 
-impl VaultTokenManager {
+impl VaultManager {
     pub fn new(vault_addr: String, role_id: String, secret_id: String) -> Self {
         Self {
-            vault_addr,
+            addr: vault_addr,
             role_id,
             secret_id,
             client: reqwest::Client::new(),
@@ -26,10 +26,7 @@ impl VaultTokenManager {
     }
 
     async fn login(&self) -> Result<String> {
-        let url = format!(
-            "{}/v1/auth/approle/login",
-            self.vault_addr.trim_end_matches('/')
-        );
+        let url = format!("{}/v1/auth/approle/login", self.addr.trim_end_matches('/'));
 
         let body = serde_json::json!({
             "role_id": self.role_id,
@@ -94,7 +91,7 @@ impl VaultTokenManager {
 
         let url = format!(
             "{}/v1/auth/token/renew-self",
-            self.vault_addr.trim_end_matches('/')
+            self.addr.trim_end_matches('/')
         );
 
         let resp = self
@@ -142,7 +139,7 @@ impl VaultTokenManager {
 
         if let Some(expires_at) = *self.expires_at.lock().await {
             let remaining = expires_at.saturating_duration_since(now);
-            if remaining <= Duration::from_secs(60) {
+            if remaining <= Duration::from_secs(300) {
                 if let Err(_) = self.renew().await {
                     need_login = true;
                 }
@@ -167,31 +164,4 @@ impl VaultTokenManager {
 
         Ok(final_token)
     }
-}
-
-pub async fn read_vault_data(vault_addr: &str, token: &str, secret_path: &str) -> Result<Value> {
-    let url = format!("{}/v1/{}", vault_addr.trim_end_matches('/'), secret_path);
-
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {}", token))?,
-    );
-
-    let client = reqwest::Client::new();
-    let resp = client.get(&url).headers(headers).send().await?;
-
-    if !resp.status().is_success() {
-        anyhow::bail!("HTTP error {}", resp.status());
-    }
-
-    let json: Value = resp.json().await?;
-    Ok(json["data"]["data"].clone())
-}
-
-pub fn get_vault_password(data: &serde_json::Value, key: &str) -> Result<String> {
-    data.get(key)
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| anyhow::anyhow!("Vault key '{}' not found or not a string", key))
 }

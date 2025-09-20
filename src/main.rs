@@ -2,14 +2,16 @@ mod constant;
 mod dbhub;
 mod message;
 mod utils;
+mod vault;
 mod websocket;
 
 use crate::constant::AUTH_READWRITE_ROLE;
 use crate::constant::YTX_SECRET_PATH;
 use crate::dbhub::*;
 use crate::utils::*;
+use crate::vault::*;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::Result;
 use dotenvy::dotenv;
 use std::{env::var, sync::Arc};
 use tokio::io::AsyncWriteExt;
@@ -24,57 +26,16 @@ async fn main() -> Result<()> {
     dotenv().ok();
 
     let rust_log = var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
-
     let _guard = init_tracing(&rust_log);
 
-    // Read vault data from .env file
-    let vault_role_id = var("VAULT_ROLE_ID").map_err(|_| anyhow!("VAULT_ROLE_ID not set"))?;
-    if vault_role_id.trim().is_empty() {
-        anyhow::bail!("VAULT_ROLE_ID is empty");
-    }
+    let vault_context = VaultContext::new().await?;
+    let auth_readwrite_password = vault_context
+        .get_password(YTX_SECRET_PATH, AUTH_READWRITE_ROLE)
+        .await?;
 
-    let vault_secret_id = var("VAULT_SECRET_ID").map_err(|_| anyhow!("VAULT_SECRET_ID not set"))?;
-    if vault_secret_id.trim().is_empty() {
-        anyhow::bail!("VAULT_SECRET_ID is empty");
-    }
+    let auth_context = AuthContext::new(&auth_readwrite_password).await?;
 
-    let vault_addr = var("VAULT_ADDR").unwrap_or_else(|_| "http://127.0.0.1:8200".to_string());
-    let vault_token_manager =
-        VaultTokenManager::new(vault_addr.clone(), vault_role_id, vault_secret_id);
-    let vault_token = vault_token_manager.get_token().await?;
-
-    let ytx_passwords = read_vault_data(&vault_addr, &vault_token, YTX_SECRET_PATH)
-        .await
-        .context("Failed to read YTX role passwords from Vault")?;
-
-    let auth_readwrite_password = get_vault_password(&ytx_passwords, AUTH_READWRITE_ROLE)?;
-
-    // Read postgresql data from .env file
-    let base_postgres_url =
-        var("BASE_POSTGRES_URL").unwrap_or_else(|_| "postgres://localhost:5432".to_string());
-
-    let auth_db = read_value_with_default("AUTH_DB", "ytx_auth")?;
-    let auth_url = build_url(
-        &base_postgres_url,
-        AUTH_READWRITE_ROLE,
-        &auth_readwrite_password,
-        &auth_db,
-    )?;
-    let auth_pool = create_pool(&auth_url).await?;
-
-    sqlx::query("SELECT 1")
-        .execute(&auth_pool)
-        .await
-        .context("Failed to connect to auth DB")?;
-
-    info!("Auth database connection established.");
-
-    let db_hub = Arc::new(DbHub::new(
-        base_postgres_url,
-        vault_token_manager,
-        auth_pool,
-    ));
-
+    let db_hub = Arc::new(DbHub::new(vault_context, auth_context));
     let sql_factory = Arc::new(SqlFactory::new());
 
     {

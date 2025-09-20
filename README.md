@@ -10,6 +10,18 @@ YTX Server is a Rust-based backend server that provides WebSocket communication,
 - **Configurable:** Uses environment variables for flexible deployment.
 - **Async & Scalable:** Built with Tokio for high performance.
 
+## Environment Variables (`.env`)
+
+| Variable             | Default                             | Description                                                                                    |
+|----------------------|-------------------------------------|------------------------------------------------------------------------------------------------|
+| `VAULT_ROLE_ID`      | *(none)*                            | Vault role ID used to authenticate the server. **Must** be set.                                |
+| `VAULT_SECRET_ID`    | *(none)*                            | Vault secret ID corresponding to `VAULT_ROLE_ID`. **Must** be set.                             |
+| `RUST_LOG`           | `error,warn,info`                   | Logging level for the server. Can be customized.                                               |
+| `BASE_POSTGRES_URL`  | `postgres://localhost:5432`         | Base URL for connecting to PostgreSQL. Can be customized.                                      |
+| `VAULT_ADDR`         | `"http://127.0.0.1:8200"`           | Vault server address. Can be customized.                                                       |
+| `LISTEN_ADDR`        | `127.0.0.1:7749`                    | IP and port for the server to listen on. Can be customized.                                    |
+| `AUTH_DB`            | `ytx_auth`                          | Database storing YTX role and workspace info. **Must** match the database created by InitDB.   |
+
 ## Getting Started
 
 ### Prerequisites

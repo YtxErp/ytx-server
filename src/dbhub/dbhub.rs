@@ -1,8 +1,5 @@
-use crate::YTX_SECRET_PATH;
-
-use crate::VaultTokenManager;
-use crate::utils::get_vault_password;
-use crate::utils::read_vault_data;
+use crate::AuthContext;
+use crate::VaultContext;
 
 use anyhow::Result;
 use sqlx::postgres::{PgPool, PgPoolOptions};
@@ -13,23 +10,17 @@ use tracing::info;
 use url::Url;
 
 pub struct DbHub {
-    pub base_postgres_url: String,
-    pub vault_token_manager: VaultTokenManager,
-    pub auth_pool: PgPool,
+    pub vault_context: VaultContext,
+    pub auth_context: AuthContext,
     pools: Mutex<HashMap<(String, String), (PgPool, Instant)>>,
     pub senders: Mutex<HashMap<(String, String), (broadcast::Sender<String>, Instant)>>,
 }
 
 impl DbHub {
-    pub fn new(
-        base_postgres_url: String,
-        vault_token_manager: VaultTokenManager,
-        auth_pool: PgPool,
-    ) -> Self {
+    pub fn new(vault_context: VaultContext, auth_context: AuthContext) -> Self {
         Self {
-            base_postgres_url,
-            vault_token_manager,
-            auth_pool,
+            vault_context,
+            auth_context,
             pools: Mutex::new(HashMap::new()),
             senders: Mutex::new(HashMap::new()),
         }
@@ -50,15 +41,6 @@ impl DbHub {
         pools.insert(key, (pool.clone(), now));
 
         Ok(pool)
-    }
-
-    pub async fn get_role_password(&self, role: &str) -> Result<String> {
-        let vault_token = self.vault_token_manager.get_token().await?;
-        let vault_addr = &self.vault_token_manager.vault_addr;
-
-        let data = read_vault_data(vault_addr, &vault_token, YTX_SECRET_PATH).await?;
-        let password = get_vault_password(&data, role)?;
-        Ok(password)
     }
 
     pub async fn cleanup_idle_resource(&self, timeout_secs: u64) {

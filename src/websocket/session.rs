@@ -84,16 +84,16 @@ impl Session {
 
         let forwarder_handle = std::mem::replace(&mut self.forwarder, tokio::spawn(async {}));
         if let Err(e) = forwarder_handle.await {
-            error!("[session] Broadcast forwarder task join failed: {:?}", e);
+            error!("Broadcast forwarder task join failed: {:?}", e);
         }
 
         if let Ok(mut writer) = self.ws_writer.try_lock() {
             if let Err(e) = writer.close().await {
-                error!("[session] WebSocket close failed: {:?}", e);
+                error!("WebSocket close failed: {:?}", e);
             }
         }
 
-        info!("[session] Cleanup finished successfully.");
+        info!("WebSocket and Session cleanup successfully.");
     }
 }
 
@@ -111,7 +111,7 @@ impl Session {
         let msg: Msg = serde_json::from_str(&text)?;
         let msg_type = msg.msg_type.clone();
 
-        info!("Handling message: {:?}", msg_type);
+        info!("Handling: {:?}", msg_type);
 
         match msg.msg_type {
             MsgType::Login => {
@@ -184,7 +184,7 @@ impl Session {
             _ => {}
         }
 
-        info!("Message {:?} processed successfully.", msg_type);
+        info!("{:?} processed successfully.", msg_type);
 
         return Ok(());
     }
@@ -206,7 +206,7 @@ impl Session {
             return Err(anyhow!("Invalid email format"));
         }
 
-        let auth_pool = &self.dbhub.auth_pool;
+        let auth_pool = &self.dbhub.auth_context.auth_pool;
 
         let existing = sqlx::query("SELECT 1 FROM ytx_user WHERE email = $1")
             .bind(email)
@@ -263,7 +263,7 @@ impl Session {
         let workspace = &value.workspace;
         let password = &value.password;
 
-        let auth_pool = &self.dbhub.auth_pool;
+        let auth_pool = &self.dbhub.auth_context.auth_pool;
 
         // ================================
         // Email verification and password check
@@ -371,10 +371,14 @@ impl Session {
             .try_get("role")
             .with_context(|| "Failed to get 'role' from workspace row")?;
 
-        let role_password: String = self.dbhub.get_role_password(&role).await?;
+        let role_password: String = self
+            .dbhub
+            .vault_context
+            .get_password(YTX_SECRET_PATH, &role)
+            .await?;
 
         let role_url = build_url(
-            &self.dbhub.base_postgres_url,
+            &self.dbhub.auth_context.base_postgres_url,
             &role,
             &role_password,
             &database,
@@ -423,7 +427,7 @@ impl Session {
 
 impl Session {
     async fn apply_workspace_access(&self, user_id: Uuid, workspace: &str) -> Result<()> {
-        let auth_pool = &self.dbhub.auth_pool;
+        let auth_pool = &self.dbhub.auth_context.auth_pool;
 
         sqlx::query(
             r#"

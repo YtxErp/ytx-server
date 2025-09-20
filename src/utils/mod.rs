@@ -1,7 +1,5 @@
-mod config;
+mod auth_context;
 mod logging;
-mod vault;
 
-pub use config::*;
+pub use auth_context::*;
 pub use logging::init_tracing;
-pub use vault::*;
